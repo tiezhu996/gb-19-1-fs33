@@ -81,6 +81,16 @@ func CreatePayment(c *gin.Context) {
 		return
 	}
 
+	if payment.Amount <= 0 {
+		utils.BadRequest(c, "缴费金额必须大于0")
+		return
+	}
+
+	if !isValidPaymentMethod(payment.PaymentMethod) {
+		utils.BadRequest(c, "收款方式无效")
+		return
+	}
+
 	payment.ReceiptNo = generateReceiptNo()
 	payment.Status = "paid"
 
@@ -106,12 +116,19 @@ func CreatePayment(c *gin.Context) {
 				TotalHours: course.TotalHours,
 				UsedHours:  0,
 			}
-			tx.Where(models.StudentCourse{StudentID: payment.StudentID, CourseID: courseID}).
-				FirstOrCreate(&studentCourse)
+			if err := tx.Where(models.StudentCourse{StudentID: payment.StudentID, CourseID: courseID}).
+				FirstOrCreate(&studentCourse).Error; err != nil {
+				tx.Rollback()
+				utils.InternalServerError(c, "同步课时账户失败")
+				return
+			}
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		utils.InternalServerError(c, "保存失败")
+		return
+	}
 	utils.Success(c, payment)
 }
 

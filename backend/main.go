@@ -154,6 +154,12 @@ func main() {
 
 	api.GET("/finance/reports", controllers.GetFinanceReports)
 
+	hourAccounts := api.Group("/hour-accounts")
+	{
+		hourAccounts.GET("", controllers.GetHourAccounts)
+		hourAccounts.POST("/renew", controllers.RenewHourAccount)
+	}
+
 	dashboard := api.Group("/dashboard")
 	{
 		dashboard.GET("/stats", controllers.GetDashboardStats)

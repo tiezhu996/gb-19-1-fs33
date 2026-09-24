@@ -173,6 +173,36 @@ export const paymentApi = {
   reports: (params?: any) => get('/finance/reports', params),
 }
 
+export interface HourAccount {
+  id: number
+  student_id: number
+  student_name: string
+  student_phone?: string
+  course_id: number
+  course_name: string
+  price_per_hour: number
+  total_hours: number
+  used_hours: number
+  remaining_hours: number
+  need_renew: boolean
+  status: number
+  created_at?: string
+}
+
+export interface RenewParams {
+  student_id: number
+  course_id: number
+  hours: number
+  payment_method: string
+  payment_date?: string
+  remarks?: string
+}
+
+export const hourAccountApi = {
+  list: (params?: any) => get('/hour-accounts', params),
+  renew: (data: RenewParams) => post('/hour-accounts/renew', data),
+}
+
 export const refundApi = {
   list: () => get('/refunds'),
   create: (data: any) => post('/refunds', data),

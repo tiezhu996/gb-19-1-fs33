@@ -65,14 +65,16 @@ type Student struct {
 
 type StudentCourse struct {
 	BaseModel
-	StudentID    uint      `json:"student_id" gorm:"index;not null"`
-	CourseID     uint      `json:"course_id" gorm:"index;not null"`
-	TotalHours   int       `json:"total_hours" gorm:"not null"`
-	UsedHours    int       `json:"used_hours" gorm:"default:0"`
-	RemainingHours int     `json:"remaining_hours" gorm:"-"`
-	StartDate    *time.Time `json:"start_date"`
-	EndDate      *time.Time `json:"end_date"`
-	Status       int       `json:"status" gorm:"default:1"`
+	StudentID      uint       `json:"student_id" gorm:"index;not null"`
+	CourseID       uint       `json:"course_id" gorm:"index;not null"`
+	TotalHours     int        `json:"total_hours" gorm:"not null"`
+	UsedHours      int        `json:"used_hours" gorm:"default:0"`
+	RemainingHours int        `json:"remaining_hours" gorm:"-"`
+	StartDate      *time.Time `json:"start_date"`
+	EndDate        *time.Time `json:"end_date"`
+	Status         int        `json:"status" gorm:"default:1"`
+	Student        *Student   `json:"student,omitempty" gorm:"foreignKey:StudentID"`
+	Course         *Course    `json:"course,omitempty" gorm:"foreignKey:CourseID"`
 }
 
 type Course struct {
