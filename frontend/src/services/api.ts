@@ -164,13 +164,46 @@ export interface Payment {
   remarks?: string
 }
 
+export interface RenewParams {
+  student_id: number
+  course_id: number
+  hours: number
+  payment_method: string
+  payment_date?: string
+  remarks?: string
+}
+
+export interface CourseAccount {
+  id: number
+  student_id: number
+  student_name: string
+  course_id: number
+  course_name: string
+  price_per_hour: number
+  total_hours: number
+  used_hours: number
+  remaining_hours: number
+  status: number
+  need_renew: boolean
+}
+
 export const paymentApi = {
   list: (params?: any) => get('/payments', params),
   get: (id: number) => get(`/payments/${id}`),
   create: (data: Payment) => post('/payments', data),
+  renew: (data: RenewParams) => post('/payments/renew', data),
   update: (id: number, data: Partial<Payment>) => put(`/payments/${id}`, data),
   delete: (id: number) => del(`/payments/${id}`),
   reports: (params?: any) => get('/finance/reports', params),
+}
+
+export const studentCourseApi = {
+  accounts: (params?: {
+    student_id?: number
+    course_id?: number
+    keyword?: string
+    need_renew?: 0 | 1
+  }) => get<{ list: CourseAccount[]; total: number }>('/student-courses', params),
 }
 
 export const refundApi = {

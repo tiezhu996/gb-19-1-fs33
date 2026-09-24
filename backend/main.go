@@ -140,10 +140,13 @@ func main() {
 	{
 		payments.GET("", controllers.GetPayments)
 		payments.POST("", controllers.CreatePayment)
+		payments.POST("/renew", controllers.RenewPayment)
 		payments.GET("/:id", controllers.GetPayment)
 		payments.PUT("/:id", controllers.UpdatePayment)
 		payments.DELETE("/:id", controllers.DeletePayment)
 	}
+
+	api.GET("/student-courses", controllers.GetStudentCourseAccounts)
 
 	refunds := api.Group("/refunds")
 	{

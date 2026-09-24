@@ -73,6 +73,23 @@ type StudentCourse struct {
 	StartDate    *time.Time `json:"start_date"`
 	EndDate      *time.Time `json:"end_date"`
 	Status       int       `json:"status" gorm:"default:1"`
+	Student      *Student  `json:"student,omitempty" gorm:"foreignKey:StudentID"`
+	Course       *Course   `json:"course,omitempty" gorm:"foreignKey:CourseID"`
+}
+
+// StudentCourseAccount 课时账户视图：在 StudentCourse 基础上带学员/课程名称与续费状态
+type StudentCourseAccount struct {
+	ID             uint   `json:"id"`
+	StudentID      uint   `json:"student_id"`
+	StudentName    string `json:"student_name"`
+	CourseID       uint   `json:"course_id"`
+	CourseName     string `json:"course_name"`
+	PricePerHour   float64 `json:"price_per_hour"`
+	TotalHours     int    `json:"total_hours"`
+	UsedHours      int    `json:"used_hours"`
+	RemainingHours int    `json:"remaining_hours"`
+	Status         int    `json:"status"`
+	NeedRenew      bool   `json:"need_renew"`
 }
 
 type Course struct {

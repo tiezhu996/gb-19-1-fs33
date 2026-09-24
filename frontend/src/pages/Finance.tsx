@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Table,
   Card,
@@ -15,10 +15,22 @@ import {
   InputNumber,
   Tabs,
   Radio,
+  Tag,
+  Alert,
+  Checkbox,
+  Statistic,
+  Row,
+  Col,
 } from 'antd'
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { paymentApi, studentApi, courseApi } from '@/services/api'
+import {
+  paymentApi,
+  studentApi,
+  courseApi,
+  studentCourseApi,
+  type CourseAccount,
+} from '@/services/api'
 
 const { Title } = Typography
 const { Option } = Select
@@ -37,7 +49,11 @@ const paymentTypes = [
   { value: 'other', label: '其他' },
 ]
 
+// 剩余课时不超过该值标记为待续费，需与后端 LowBalanceThreshold 保持一致
+const LOW_BALANCE_THRESHOLD = 5
+
 function Finance() {
+  const [activeTab, setActiveTab] = useState('payments')
   const [loading, setLoading] = useState(false)
   const [payments, setPayments] = useState<any[]>([])
   const [students, setStudents] = useState<any[]>([])
@@ -46,6 +62,16 @@ function Finance() {
   const [modalType, setModalType] = useState<'create' | 'edit'>('create')
   const [selectedPayment, setSelectedPayment] = useState<any>(null)
   const [form] = Form.useForm()
+
+  const [accounts, setAccounts] = useState<CourseAccount[]>([])
+  const [accountLoading, setAccountLoading] = useState(false)
+  const [accountKeyword, setAccountKeyword] = useState('')
+  const [onlyNeedRenew, setOnlyNeedRenew] = useState(false)
+  const [renewVisible, setRenewVisible] = useState(false)
+  const [renewSubmitting, setRenewSubmitting] = useState(false)
+  const [renewForm] = Form.useForm()
+  const selectedCourseId = Form.useWatch('course_id', renewForm)
+  const renewHours = Form.useWatch('hours', renewForm)
 
   const fetchPayments = async () => {
     try {
@@ -59,11 +85,26 @@ function Finance() {
     }
   }
 
+  const fetchAccounts = async () => {
+    try {
+      setAccountLoading(true)
+      const res = await studentCourseApi.accounts({
+        keyword: accountKeyword || undefined,
+        need_renew: onlyNeedRenew ? 1 : undefined,
+      })
+      setAccounts(res.list || [])
+    } catch (error) {
+      console.error('Fetch accounts error:', error)
+    } finally {
+      setAccountLoading(false)
+    }
+  }
+
   const fetchOptions = async () => {
     try {
       const [studentsRes, coursesRes] = await Promise.all([
         studentApi.list({ page_size: 1000 }),
-        courseApi.list(),
+        courseApi.list({ page_size: 1000 }),
       ])
       setStudents((studentsRes as any)?.list || [])
       setCourses((coursesRes as any)?.list || [])
@@ -73,9 +114,23 @@ function Finance() {
   }
 
   useEffect(() => {
-    fetchPayments()
     fetchOptions()
+    fetchPayments()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'accounts') {
+      fetchAccounts()
+    }
+  }, [activeTab])
+
+  const renewAmount = useMemo(() => {
+    const course = courses.find((c) => c.id === selectedCourseId)
+    if (!course || !renewHours || renewHours <= 0) return 0
+    return Math.round(course.price_per_hour * renewHours * 100) / 100
+  }, [courses, selectedCourseId, renewHours])
+
+  const lowBalanceCount = accounts.filter((a) => a.need_renew).length
 
   const handleCreate = () => {
     setModalType('create')
@@ -128,6 +183,43 @@ function Finance() {
       fetchPayments()
     } catch (error) {
       console.error('Modal submit error:', error)
+    }
+  }
+
+  const openRenew = (record?: CourseAccount) => {
+    renewForm.resetFields()
+    renewForm.setFieldsValue({
+      payment_method: 'wechat',
+      payment_date: dayjs(),
+      hours: 1,
+      student_id: record?.student_id,
+      course_id: record?.course_id,
+    })
+    setRenewVisible(true)
+  }
+
+  const handleRenewSubmit = async () => {
+    try {
+      const values = await renewForm.validateFields()
+      setRenewSubmitting(true)
+      await paymentApi.renew({
+        student_id: values.student_id,
+        course_id: values.course_id,
+        hours: values.hours,
+        payment_method: values.payment_method,
+        payment_date: values.payment_date.format('YYYY-MM-DD'),
+        remarks: values.remarks,
+      })
+      message.success(`续费成功，已增加 ${values.hours} 课时`)
+      setRenewVisible(false)
+      // 续费同时生成了缴费记录，两个视图都刷新
+      fetchAccounts()
+      fetchPayments()
+    } catch (error) {
+      // 后端事务保证失败时缴费记录与课时账户都不变，弹窗保留以便修改
+      console.error('Renew error:', error)
+    } finally {
+      setRenewSubmitting(false)
     }
   }
 
@@ -200,6 +292,60 @@ function Finance() {
     },
   ]
 
+  const accountColumns = [
+    {
+      title: '学员',
+      dataIndex: 'student_name',
+      key: 'student_name',
+    },
+    {
+      title: '课程',
+      dataIndex: 'course_name',
+      key: 'course_name',
+    },
+    {
+      title: '单价(元/小时)',
+      dataIndex: 'price_per_hour',
+      key: 'price_per_hour',
+    },
+    {
+      title: '总课时',
+      dataIndex: 'total_hours',
+      key: 'total_hours',
+    },
+    {
+      title: '已用课时',
+      dataIndex: 'used_hours',
+      key: 'used_hours',
+    },
+    {
+      title: '剩余课时',
+      dataIndex: 'remaining_hours',
+      key: 'remaining_hours',
+      render: (hours: number) => (
+        <span style={{ fontWeight: hours <= LOW_BALANCE_THRESHOLD ? 600 : 400 }}>
+          {hours}
+        </span>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'need_renew',
+      key: 'need_renew',
+      render: (needRenew: boolean) =>
+        needRenew ? <Tag color="orange">待续费</Tag> : <Tag color="green">正常</Tag>,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_: any, record: CourseAccount) => (
+        <Button type="link" size="small" onClick={() => openRenew(record)}>
+          <ReloadOutlined /> 续费
+        </Button>
+      ),
+    },
+  ]
+
   return (
     <div>
       <Title level={3} style={{ marginBottom: 24 }}>
@@ -207,6 +353,8 @@ function Finance() {
       </Title>
 
       <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           {
             key: 'payments',
@@ -217,9 +365,16 @@ function Finance() {
                   style={{
                     marginBottom: 16,
                     display: 'flex',
-                    justifyContent: 'flex-end',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
                   }}
                 >
+                  <Alert
+                    style={{ padding: '2px 12px' }}
+                    type="info"
+                    showIcon
+                    message="普通缴费只生成缴费记录；为学员增加课时请使用「课时账户」中的续费"
+                  />
                   <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
                     新增缴费
                   </Button>
@@ -230,6 +385,68 @@ function Finance() {
                   dataSource={payments}
                   rowKey="id"
                   loading={loading}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'accounts',
+            label: (
+              <span>
+                课时账户
+                {lowBalanceCount > 0 && (
+                  <Tag color="orange" style={{ marginLeft: 6 }}>
+                    {lowBalanceCount} 人待续费
+                  </Tag>
+                )}
+              </span>
+            ),
+            children: (
+              <Card>
+                <Row gutter={16} style={{ marginBottom: 16 }}>
+                  <Col span={6}>
+                    <Statistic title="账户总数" value={accounts.length} />
+                  </Col>
+                  <Col span={6}>
+                    <Statistic
+                      title="待续费账户"
+                      value={lowBalanceCount}
+                      valueStyle={{ color: lowBalanceCount > 0 ? '#fa8c16' : undefined }}
+                    />
+                  </Col>
+                  <Col span={12} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    <Input.Search
+                      placeholder="搜索学员姓名/手机号"
+                      allowClear
+                      style={{ width: 240 }}
+                      value={accountKeyword}
+                      onChange={(e) => setAccountKeyword(e.target.value)}
+                      onSearch={fetchAccounts}
+                    />
+                    <Checkbox
+                      checked={onlyNeedRenew}
+                      onChange={(e) => {
+                        setOnlyNeedRenew(e.target.checked)
+                        setTimeout(fetchAccounts, 0)
+                      }}
+                    >
+                      只看待续费
+                    </Checkbox>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => openRenew()}>
+                      学员续费
+                    </Button>
+                  </Col>
+                </Row>
+
+                <Table
+                  columns={accountColumns}
+                  dataSource={accounts}
+                  rowKey="id"
+                  loading={accountLoading}
+                  rowClassName={(record) =>
+                    record.need_renew ? 'account-row-warning' : ''
+                  }
+                  pagination={{ pageSize: 10, showSizeChanger: true }}
                 />
               </Card>
             ),
@@ -259,7 +476,7 @@ function Finance() {
             </Select>
           </Form.Item>
           <Form.Item name="course_id" label="课程">
-            <Select placeholder="请选择课程">
+            <Select placeholder="请选择课程" allowClear>
               {courses.map((c) => (
                 <Option key={c.id} value={c.id}>
                   {c.name}
@@ -310,6 +527,95 @@ function Finance() {
             label="缴费日期"
             rules={[{ required: true, message: '请选择日期' }]}
           >
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="remarks" label="备注">
+            <TextArea rows={2} placeholder="请输入备注" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="学员续费"
+        open={renewVisible}
+        onOk={handleRenewSubmit}
+        onCancel={() => setRenewVisible(false)}
+        confirmLoading={renewSubmitting}
+        okText="确认续费"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="info"
+          showIcon
+          message="按课程单价自动计算学费金额，生成缴费记录的同时增加账户总课时"
+        />
+        <Form form={renewForm} layout="vertical">
+          <Form.Item
+            name="student_id"
+            label="学员"
+            rules={[{ required: true, message: '请选择学员' }]}
+          >
+            <Select
+              placeholder="请选择学员"
+              showSearch
+              optionFilterProp="children"
+            >
+              {students.map((s) => (
+                <Option key={s.id} value={s.id}>
+                  {s.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="course_id"
+            label="课程"
+            rules={[{ required: true, message: '请选择课程' }]}
+          >
+            <Select placeholder="请选择课程">
+              {courses.map((c) => (
+                <Option key={c.id} value={c.id}>
+                  {c.name}（{c.price_per_hour} 元/小时）
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="hours"
+            label="续费小时数"
+            rules={[
+              { required: true, message: '请输入续费小时数' },
+              {
+                validator: (_, value) =>
+                  value > 0
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('续费小时数必须大于0')),
+              },
+            ]}
+          >
+            <InputNumber style={{ width: '100%' }} min={1} precision={0} step={1} />
+          </Form.Item>
+          <Form.Item
+            name="payment_method"
+            label="收款方式"
+            rules={[{ required: true, message: '请选择收款方式' }]}
+          >
+            <Radio.Group>
+              {paymentMethods.map((m) => (
+                <Radio key={m.value} value={m.value}>
+                  {m.label}
+                </Radio>
+              ))}
+            </Radio.Group>
+          </Form.Item>
+          <Form.Item label="应收金额（自动计算）">
+            <span style={{ fontSize: 20, fontWeight: 600, color: '#cf1322' }}>
+              ¥ {renewAmount.toFixed(2)}
+            </span>
+          </Form.Item>
+          <Form.Item name="payment_date" label="缴费日期">
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="remarks" label="备注">
